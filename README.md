@@ -2,15 +2,11 @@
 
 A bare-metal, ultra-high-throughput Shared Memory Ring Buffer written in **Rust** and packaged as a native Python C-Extension using **Maturin**.
 
-This engine acts as a zero-serialization, zero-copy data highway designed (explicitly) for deep reinforcement learning pipelines. It decouples environment simulators from machine learning frameworks, allowing them to execute concurrently across isolated OS processes without hitting the Python Global Interpreter Lock (GIL) bottleneck.
-
----
-
 ## Architecture Overview
 
-The system breaks your machine learning pipeline into three completely decoupled layers:
+This engine acts as a zero-serialization, zero-copy data highway designed (explicitly) for deep reinforcement learning pipelines. It decouples environment simulators from machine learning frameworks, allowing them to execute concurrently across isolated OS processes without hitting the Python Global Interpreter Lock (GIL) bottleneck.
 
-1. **Ring Buffer (`zero-copy_buffer` Core):** A native Rust library that handles low-level virtual memory allocation, shared memory handles, and lock-free thread coordination using hardware-level atomics.
+**Ring Buffer (`zero-copy_buffer` Core):** A native Rust library that handles low-level virtual memory allocation, shared memory handles, and lock-free thread coordination using hardware-level atomics.
 
 ---
 
