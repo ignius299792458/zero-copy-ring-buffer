@@ -10,7 +10,7 @@ authors = ["ignius299792458"]
 package-mode = false
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.15"
+python = ">=3.12,<3.15"
 torch = { version = "^2.2", source = "pypi" }
 gymnasium = "^0.29"
 numpy = "^1.22"
