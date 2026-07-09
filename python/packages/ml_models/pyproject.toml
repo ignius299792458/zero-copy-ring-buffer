@@ -1,0 +1,13 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "ml_models"
+version = "0.1.0"
+description = "Isolated machine learning models package"
+authors = ["ignius299792458"]
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.15"
+torch = "^2.12.1"

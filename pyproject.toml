@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[tool.poetry]
+name = "zero_copy_buffer"
+version = "0.1.0"
+description = "High-performance zero-copy shared memory buffer with Python bindings"
+authors = ["ignius299792458"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.15"
+torch = { version = "^2.2", source = "pypi" }
+gymnasium = "^0.29"
+numpy = "^1.22"
+
+# Link your sub-packages as editable path plugins
+sim_envs = { path = "python/packages/sim_envs", develop = true }
+ml_models = { path = "python/packages/ml_models", develop = true }
+
+[tool.poetry.group.dev.dependencies]
+maturin = "^1.5"
+
+[tool.maturin]
+python-source = "python"
+module-name = "zero_copy_buffer._core"

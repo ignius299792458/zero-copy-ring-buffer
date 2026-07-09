@@ -1,6 +1,14 @@
 [package]
 name = "zero_copy_buffer"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+
+[lib]
+name = "zero_copy_buffer"
+crate-type = ["cdylib"]
 
 [dependencies]
+# extension-module ensures we dynamically link against Python at runtime
+pyo3 = { version = "0.21", features = ["extension-module"] }
+# Multi-process shared memory abstractions
+shared_memory = "0.12.4"
