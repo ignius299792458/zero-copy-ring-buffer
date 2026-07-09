@@ -9,5 +9,6 @@ description = "Isolated machine learning models package"
 authors = ["ignius299792458"]
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.15"
+python = ">=3.12,<3.15"
 torch = "^2.12.1"
+numpy = "^2.5.1"
