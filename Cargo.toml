@@ -12,3 +12,6 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.21", features = ["extension-module"] }
 # Multi-process shared memory abstractions
 shared_memory = "0.12.4"
+
+[profile.release]
+opt-level = 3
