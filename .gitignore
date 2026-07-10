@@ -10,3 +10,5 @@ python/zero_copy_buffer/_core*.dll
 __pycache__/
 *.pyc
 .venv/
+
+.DS_Store
