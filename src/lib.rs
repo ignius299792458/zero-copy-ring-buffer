@@ -56,7 +56,7 @@ impl PyTransition {
 
     fn __repr__(&self) -> String {
         format!(
-            "Transition(obs={:?}, a={}, lp={:.3f}, r={}, done={})",
+            "Transition(obs={:?}, a={}, lp={:.3}, r={}, done={})",
             self.inner.observation,
             self.inner.action,
             self.inner.log_prob,
