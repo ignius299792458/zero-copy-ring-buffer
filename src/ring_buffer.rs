@@ -26,6 +26,13 @@ impl SimpleBuffer {
 
     /// Push one transition. Overwrites oldest when full.
     pub fn write(&mut self, t: PpoTransition) {
+        println!(
+            "write: slot={} count={}/{} overwrite={}",
+            self.write_at,
+            self.count,
+            self.capacity,
+            self.count == self.capacity
+        );
         self.slots[self.write_at] = t;
         self.write_at = (self.write_at + 1) % self.capacity;
         if self.count < self.capacity {

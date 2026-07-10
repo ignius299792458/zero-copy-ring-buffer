@@ -2,6 +2,14 @@
 
 A bare-metal, ultra-high-throughput Shared Memory Ring Buffer written in **Rust** and packaged as a native Python C-Extension using **Maturin**.
 
+## Motivation
+
+Python multiprocessing RL pipelines pay a tax on every step: transitions are pickled, sent across a process boundary, and unpickled on the other side. This serialization cost compounds as simulators produce thousands of steps per second and the number of parallel workers grows — inter-process communication, rather than compute, becomes the ceiling on throughput.
+
+`zero_copy_buffer` targets that bottleneck. A Rust core owns a single shared-memory region that simulation workers and training processes access directly, avoiding the pickle-and-pipe round trip. Transitions are stored as raw, layout-stable bytes, so a consumer can map a tensor straight onto the buffer and read it without deserialization.
+
+The goal is a buffer built for throughput: data moves through shared memory instead of a serialization pipeline, freeing the training loop to spend its time learning rather than waiting on IPC.
+
 ## Architecture Overview
 
 This engine acts as a zero-serialization, zero-copy data highway designed (explicitly) for deep reinforcement learning pipelines. It decouples environment simulators from machine learning frameworks, allowing them to execute concurrently across isolated OS processes without hitting the Python Global Interpreter Lock (GIL) bottleneck.
