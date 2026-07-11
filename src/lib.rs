@@ -1,9 +1,3 @@
-// PyO3 bridge.
-// module name MUST be "_core" to match pyproject.toml:
-//   module-name = "zero_copy_buffer._core"
-// Maturin installs this as zero_copy_buffer/_core.so
-// python/zero_copy_buffer/__init__.py re-exports from here.
-
 mod ring_buffer;
 mod types;
 
