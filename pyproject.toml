@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [tool.poetry]
 name = "zero_copy_buffer"
-version = "0.1.0"
+version = "0.2.0"
 description = "High-performance zero-copy shared memory buffer with Python bindings"
 authors = ["ignius299792458"]
 package-mode = false
