@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [tool.poetry]
 name = "zero_copy_buffer"
-version = "0.1.0"
+version = "0.2.0"
 description = "High-performance zero-copy shared memory buffer with Python bindings"
 authors = ["ignius299792458"]
 package-mode = false
@@ -18,9 +18,11 @@ numpy = "^1.22"
 # Link your sub-packages as editable path plugins
 sim_envs = { path = "python/packages/sim_envs", develop = true }
 ml_models = { path = "python/packages/ml_models", develop = true }
+pygame = "^2.6.1"
 
 [tool.poetry.group.dev.dependencies]
 maturin = "^1.5"
+black = "^26.5.1"
 
 [tool.maturin]
 python-source = "python"

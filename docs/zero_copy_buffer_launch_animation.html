@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zero_copy_buffer — launch animation</title>
+<style>
+  :root{ --bg:#0B0E14; --panel:#161B22; --stroke:#21262D; --text:#C9D1D9; --muted:#6E7681; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace}
+  .page{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:14px}
+  .stage{width:100%;max-width:1120px;aspect-ratio:16/9;border-radius:16px;overflow:hidden;
+    background:var(--bg);box-shadow:0 20px 60px rgba(0,0,0,.5);border:1px solid var(--stroke)}
+  canvas{display:block;width:100%;height:100%}
+  .bar{display:flex;gap:10px;align-items:center;color:var(--muted);font-size:12.5px;flex-wrap:wrap;justify-content:center}
+  .bar button{font:inherit;font-size:12.5px;color:var(--text);background:var(--panel);
+    border:1px solid var(--stroke);border-radius:8px;padding:6px 12px;cursor:pointer}
+  .bar button:hover{border-color:#3d444d}
+  .bar .tip{color:var(--muted)}
+  .bar code{color:#C9D1D9}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="stage"><canvas id="c"></canvas></div>
+  <div class="bar">
+    <button id="toggle">Pause</button>
+    <button id="speedBtn">Speed: 1×</button>
+    <span class="tip">screen-record the frame (macOS <code>⇧⌘5</code>) → export as GIF/MP4 for your post</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const LW = 1200, LH = 675;          // logical canvas
+  let scale = 1, dpr = Math.max(1, window.devicePixelRatio || 1);
+
+  function resize(){
+    const rect = cv.getBoundingClientRect();
+    dpr = Math.max(1, window.devicePixelRatio || 1);
+    cv.width  = Math.round(rect.width  * dpr);
+    cv.height = Math.round(rect.height * dpr);
+    scale = (rect.width / LW) * dpr;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- palette ----
+  const C = {
+    bg:'#0B0E14', grid:'#11161F', faint:'#1B222C', stroke:'#2A313B',
+    text:'#C9D1D9', muted:'#6E7681',
+    green:'#3FB950', greenGlow:'#57e06a',
+    orange:'#F0883E', orangeGlow:'#FF9D4D',
+    blue:'#58A6FF', blueGlow:'#79b8ff',
+  };
+
+  // ---- geometry ----
+  const cx = 600, cy = 352, R = 150, N = 16, SLOT_R = 11;
+  const slots = [];
+  for(let i=0;i<N;i++){
+    const a = -Math.PI/2 + i*(2*Math.PI/N);
+    slots.push({ i, a, x: cx + R*Math.cos(a), y: cy + R*Math.sin(a),
+                 fill:0, target:0, flash:0 });
+  }
+
+  const producers = [
+    { id:0, x:150, y:150 }, { id:1, x:150, y:284 },
+    { id:2, x:150, y:420 }, { id:3, x:150, y:554 },
+  ].map(p => ({...p, nextEmit: Math.random()*0.6, pulse:0}));
+
+  const consumer = { x:1042, y:352, pulse:0, nextRead: 1.4 };
+
+  let writeHead = 0, readHead = 0, count = 0;
+  let wHeadA = slots[0].a, rHeadA = slots[0].a;   // smoothed head angles
+  let writes = 0, reads = 0;
+
+  const packets = [];   // {x0,y0,x1,y1,t,dur,kind,slot,flash}
+  const K = 4;          // batch read size
+
+  // ---- helpers ----
+  const easeIO = t => t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+  const lerp = (a,b,t) => a+(b-a)*t;
+  function angLerp(a,b,t){ let d=b-a; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI; return a+d*t; }
+
+  // ---- events ----
+  function emit(p){
+    const idx = writeHead;
+    writeHead = (writeHead+1)%N;
+    const overwrite = (count===N);
+    if(count<N) count++; else readHead = (readHead+1)%N;
+    writes++;
+    packets.push({ x0:p.x+58, y0:p.y, x1:slots[idx].x, y1:slots[idx].y,
+                   t:0, dur:0.62, kind:'w', slot:idx, ow:overwrite });
+    p.pulse = 1;
+  }
+  function consume(){
+    const take = Math.min(K, count);
+    for(let k=0;k<take;k++){
+      const idx = readHead; readHead=(readHead+1)%N; count--;
+      slots[idx].target = 0;
+      packets.push({ x0:slots[idx].x, y0:slots[idx].y, x1:consumer.x-58, y1:consumer.y,
+                     t:0, dur:0.5, kind:'r', slot:idx });
+      reads++;
+    }
+    if(take>0) consumer.pulse = 1;
+  }
+
+  // ---- update ----
+  let speed = 1;
+  function update(dt){
+    for(const p of producers){
+      p.nextEmit -= dt;
+      p.pulse = Math.max(0, p.pulse - dt*3);
+      if(p.nextEmit<=0){ emit(p); p.nextEmit = 0.85 + Math.random()*0.7; }
+    }
+    consumer.nextRead -= dt;
+    consumer.pulse = Math.max(0, consumer.pulse - dt*2.2);
+    if(consumer.nextRead<=0 && count>=K){ consume(); consumer.nextRead = 1.15 + Math.random()*0.4; }
+    else if(consumer.nextRead<=0){ consumer.nextRead = 0.3; }
+
+    for(let i=packets.length-1;i>=0;i--){
+      const pk = packets[i];
+      pk.t += dt/pk.dur;
+      if(pk.t>=1){
+        if(pk.kind==='w'){ slots[pk.slot].target = 1; if(pk.ow) slots[pk.slot].flash = 1; }
+        packets.splice(i,1);
+      }
+    }
+    for(const s of slots){
+      s.fill  = lerp(s.fill, s.target, Math.min(1, dt*10));
+      s.flash = Math.max(0, s.flash - dt*2.2);
+    }
+    // smooth heads toward their slot angles
+    wHeadA = angLerp(wHeadA, slots[writeHead].a, Math.min(1, dt*9));
+    rHeadA = angLerp(rHeadA, slots[readHead].a, Math.min(1, dt*9));
+  }
+
+  // ---- draw ----
+  function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.roundRect(x,y,w,h,r); }
+
+  function drawBackground(){
+    ctx.fillStyle = C.bg; ctx.fillRect(0,0,LW,LH);
+    // faint dot grid
+    ctx.fillStyle = C.grid;
+    for(let gx=40; gx<LW; gx+=40){
+      for(let gy=40; gy<LH; gy+=40){ ctx.beginPath(); ctx.arc(gx,gy,1,0,7); ctx.fill(); }
+    }
+    // vignette
+    const g = ctx.createRadialGradient(cx,cy,120, cx,cy,620);
+    g.addColorStop(0,'rgba(0,0,0,0)'); g.addColorStop(1,'rgba(0,0,0,0.35)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,LW,LH);
+  }
+
+  function node(x,y,w,h,label,sub,accent,pulse){
+    // glow when pulsing
+    if(pulse>0){ ctx.save(); ctx.shadowColor=accent; ctx.shadowBlur=26*pulse; }
+    ctx.fillStyle = C.panel || '#161B22';
+    ctx.fillStyle = '#12171F';
+    roundRect(x-w/2,y-h/2,w,h,12); ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = pulse>0.05 ? accent : C.stroke;
+    roundRect(x-w/2,y-h/2,w,h,12); ctx.stroke();
+    if(pulse>0) ctx.restore();
+    ctx.fillStyle = C.text; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font = '600 15px ui-monospace, Menlo, monospace';
+    ctx.fillText(label, x, y - (sub?8:0));
+    if(sub){ ctx.fillStyle = C.muted; ctx.font='12px ui-monospace, Menlo, monospace'; ctx.fillText(sub, x, y+11); }
+  }
+
+  function drawGuides(){
+    ctx.strokeStyle = C.faint; ctx.lineWidth = 1;
+    for(const p of producers){
+      ctx.beginPath(); ctx.moveTo(p.x+58,p.y); ctx.lineTo(cx- R*0.4, cy); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(cx+R*0.4,cy); ctx.lineTo(consumer.x-58,consumer.y); ctx.stroke();
+  }
+
+  function drawRing(){
+    // ring baseline
+    ctx.strokeStyle = C.faint; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
+
+    for(const s of slots){
+      const filled = s.fill;
+      // base slot
+      ctx.beginPath(); ctx.arc(s.x,s.y,SLOT_R,0,7);
+      ctx.fillStyle = '#0E131B'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = C.stroke; ctx.stroke();
+      // fill glow
+      if(filled>0.03){
+        ctx.save();
+        const col = s.flash>0.02 ? '#FFFFFF' : C.orange;
+        ctx.shadowColor = C.orangeGlow; ctx.shadowBlur = 14*Math.max(filled,s.flash);
+        ctx.globalAlpha = Math.max(filled, s.flash);
+        ctx.beginPath(); ctx.arc(s.x,s.y,SLOT_R-2.5,0,7);
+        ctx.fillStyle = col; ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // write head marker (orange) + read head marker (blue)
+    drawHead(wHeadA, C.orange, C.orangeGlow, 'W');
+    drawHead(rHeadA, C.blue,   C.blueGlow,   'R');
+
+    // center label
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle=C.text; ctx.font='600 17px ui-monospace, Menlo, monospace';
+    ctx.fillText('ring buffer', cx, cy-9);
+    ctx.fillStyle=C.orange; ctx.font='12px ui-monospace, Menlo, monospace';
+    ctx.fillText('Rust · lock-free', cx, cy+11);
+  }
+
+  function drawHead(a, col, glow, letter){
+    const rOut = R + 26;
+    const x = cx + rOut*Math.cos(a), y = cy + rOut*Math.sin(a);
+    ctx.save();
+    ctx.shadowColor = glow; ctx.shadowBlur = 12;
+    ctx.fillStyle = col;
+    // small triangle pointing inward
+    ctx.translate(x,y); ctx.rotate(a + Math.PI/2);
+    ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(6,4); ctx.lineTo(-6,4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = col; ctx.font='600 12px ui-monospace, Menlo, monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    const lx = cx + (rOut+14)*Math.cos(a), ly = cy + (rOut+14)*Math.sin(a);
+    ctx.fillText(letter, lx, ly);
+  }
+
+  function drawPackets(){
+    for(const pk of packets){
+      const e = easeIO(Math.min(1,pk.t));
+      const x = lerp(pk.x0,pk.x1,e), y = lerp(pk.y0,pk.y1,e);
+      const col  = pk.kind==='w' ? C.green : C.blue;
+      const glow = pk.kind==='w' ? C.greenGlow : C.blueGlow;
+      // streak
+      const bx = lerp(pk.x0,pk.x1, Math.max(0,e-0.06)), by = lerp(pk.y0,pk.y1, Math.max(0,e-0.06));
+      const grad = ctx.createLinearGradient(bx,by,x,y);
+      grad.addColorStop(0,'rgba(0,0,0,0)'); grad.addColorStop(1,col);
+      ctx.strokeStyle = grad; ctx.lineWidth = 3; ctx.lineCap='round';
+      ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(x,y); ctx.stroke();
+      // head
+      ctx.save(); ctx.shadowColor=glow; ctx.shadowBlur=12;
+      ctx.fillStyle=col; roundRect(x-4.5,y-4.5,9,9,2.5); ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  function drawProducers(){
+    for(const p of producers){
+      node(p.x,p.y,116,52,'sim_env '+p.id,'process',C.green,p.pulse);
+    }
+  }
+  function drawConsumer(){
+    node(consumer.x,consumer.y,168,116,'train model','PyTorch · reads batches',C.blue,consumer.pulse);
+  }
+
+  function drawHUD(){
+    // title
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle=C.text; ctx.font='600 30px ui-monospace, Menlo, monospace';
+    ctx.fillText('zero_copy_buffer', 44, 62);
+    ctx.fillStyle=C.muted; ctx.font='14px ui-monospace, Menlo, monospace';
+    ctx.fillText('sim_env × N  →  Rust ring buffer  →  training model', 46, 88);
+
+    // legend
+    const ly=632; let lx=46;
+    const leg=[['write',C.green],['stored',C.orange],['read',C.blue]];
+    ctx.font='12.5px ui-monospace, Menlo, monospace';
+    for(const [t,c] of leg){
+      ctx.fillStyle=c; ctx.beginPath(); ctx.arc(lx,ly-4,5,0,7); ctx.fill();
+      ctx.fillStyle=C.muted; ctx.textAlign='left'; ctx.fillText(t, lx+11, ly);
+      lx += ctx.measureText(t).width + 44;
+    }
+
+    // counters
+    ctx.textAlign='right'; ctx.fillStyle=C.muted;
+    ctx.font='13px ui-monospace, Menlo, monospace';
+    ctx.fillText(`writes ${writes}   reads ${reads}   fill ${count}/${N}`, LW-44, 632);
+  }
+
+  function render(){
+    ctx.setTransform(scale,0,0,scale,0,0);
+    drawBackground();
+    drawGuides();
+    drawProducers();
+    drawConsumer();
+    drawRing();
+    drawPackets();
+    drawHUD();
+  }
+
+  // ---- loop ----
+  let running = true, last = performance.now();
+  function frame(now){
+    const dt = Math.min(0.05, (now-last)/1000) * speed;
+    last = now;
+    if(running) update(dt);
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  document.getElementById('toggle').onclick = function(){
+    running=!running; this.textContent = running?'Pause':'Play';
+  };
+  const speeds=[1,1.5,0.6]; let si=0;
+  document.getElementById('speedBtn').onclick = function(){
+    si=(si+1)%speeds.length; speed=speeds[si]; this.textContent='Speed: '+speed+'×';
+  };
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

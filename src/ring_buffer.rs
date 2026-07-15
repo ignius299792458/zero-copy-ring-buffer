@@ -1,66 +1,95 @@
-// Phase 1: simple Vec-backed array buffer.
-//
-// Fixed capacity. write_at wraps to 0 when full — oldest data silently
-// overwritten. No atomics, no mmap, no multiprocessing yet.
-// Phase 2 will replace the Vec with mmap(MAP_SHARED) and write_at with
-// AtomicUsize::fetch_add, touching nothing else.
+use crate::types::StateTransition;
 
-use crate::types::PpoTransition;
-
-pub struct SimpleBuffer {
-    slots: Vec<PpoTransition>,
+pub struct RingBuffer {
+    slots: Vec<StateTransition>,
     capacity: usize,
-    write_at: usize, // next slot to write; wraps at capacity
-    count: usize,    // live items; saturates at capacity
+    head: usize,
+    tail: usize,
+    count: usize,
+
+    total_pushes: u64,    // successful writes
+    total_pops: u64,      // successful reads
+    rejected_pushes: u64, // push() calls that hit a full buffer
+    empty_pops: u64,      // pop() calls that hit an empty buffer
+    peak_count: usize,    // highest `count` ever observed
 }
 
-impl SimpleBuffer {
+impl RingBuffer {
     pub fn new(capacity: usize) -> Self {
         Self {
-            slots: vec![PpoTransition::zero(); capacity],
+            slots: vec![StateTransition::zero(); capacity],
             capacity,
-            write_at: 0,
+            head: 0,
+            tail: 0,
             count: 0,
+            total_pushes: 0,
+            total_pops: 0,
+            rejected_pushes: 0,
+            empty_pops: 0,
+            peak_count: 0,
         }
     }
 
-    /// Push one transition. Overwrites oldest when full.
-    pub fn write(&mut self, t: PpoTransition) {
-        println!(
-            "write: slot={} count={}/{} overwrite={}",
-            self.write_at,
-            self.count,
-            self.capacity,
-            self.count == self.capacity
-        );
-        self.slots[self.write_at] = t;
-        self.write_at = (self.write_at + 1) % self.capacity;
-        if self.count < self.capacity {
-            self.count += 1;
+    pub fn push(&mut self, item: StateTransition) -> Result<(), &'static str> {
+        if self.is_full() {
+            self.rejected_pushes += 1;
+            return Err("buffer full");
         }
+
+        self.slots[self.head] = item;
+        self.head = (self.head + 1) % self.capacity;
+        self.count += 1;
+        self.total_pushes += 1;
+        if self.count > self.peak_count {
+            self.peak_count = self.count;
+        }
+
+        self.log_metrics();
+
+        Ok(())
     }
 
-    /// Read up to n transitions, starting from the oldest live slot.
-    pub fn read_batch(&self, n: usize) -> Vec<PpoTransition> {
-        let take = n.min(self.count);
-        // when full, write_at points at the oldest slot
-        let start = if self.count == self.capacity {
-            self.write_at
-        } else {
-            0
-        };
-        (0..take)
-            .map(|i| self.slots[(start + i) % self.capacity])
-            .collect()
+    pub fn pop(&mut self) -> Option<StateTransition> {
+        if self.is_empty() {
+            self.empty_pops += 1;
+            return None;
+        }
+
+        let item = self.slots[self.tail];
+        self.tail = (self.tail + 1) % self.capacity;
+        self.count -= 1;
+        self.total_pops += 1;
+
+        self.log_metrics();
+
+        Some(item)
     }
 
     pub fn len(&self) -> usize {
         self.count
     }
-    pub fn capacity(&self) -> usize {
+    pub fn get_capacity(&self) -> usize {
         self.capacity
+    }
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
     }
     pub fn is_full(&self) -> bool {
         self.count == self.capacity
+    }
+
+    pub fn log_metrics(&self) {
+        let fill_pct = 100.0 * self.count as f32 / self.capacity as f32;
+        println!(
+            "in rust [ring_buffer] fill={}/{} ({:.1}%)  peak={}  pushes={} (rejected={})  pops={} (empty={})",
+            self.count,
+            self.capacity,
+            fill_pct,
+            self.peak_count,
+            self.total_pushes,
+            self.rejected_pushes,
+            self.total_pops,
+            self.empty_pops,
+        );
     }
 }
