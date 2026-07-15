@@ -1,3 +1,3 @@
-from zero_copy_buffer._core import Transition, RingBuffer
+from zero_copy_buffer._core import StateTransition, RingBuffer
 
-__all__ = ["Transition", "RingBuffer"]
+__all__ = ["StateTransition", "RingBuffer"]

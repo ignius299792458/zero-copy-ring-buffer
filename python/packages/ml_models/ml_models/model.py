@@ -14,8 +14,10 @@ class TinyActor(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(4, 64), nn.Tanh(),
-            nn.Linear(64, 64), nn.Tanh(),
+            nn.Linear(4, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
             nn.Linear(64, 2),
         )
 
@@ -33,15 +35,15 @@ class ModelReader:
 
     def __init__(
         self,
-        buffer:     RingBuffer,
+        buffer: RingBuffer,
         batch_size: int = 64,
-        device:     str = "cpu",
+        device: str = "cpu",
     ):
-        self.buffer     = buffer
+        self.buffer = buffer
         self.batch_size = batch_size
-        self.device     = torch.device(device)
-        self.actor      = TinyActor().to(self.device)
-        self._n_reads   = 0
+        self.device = torch.device(device)
+        self.actor = TinyActor().to(self.device)
+        self._n_reads = 0
 
     def read_and_forward(self) -> dict | None:
         """
@@ -54,28 +56,30 @@ class ModelReader:
         batch = self.buffer.pop_batch(self.batch_size)
 
         # unpack Rust structs -> numpy -> tensor (one allocation)
-        obs_np  = np.array([t.observation for t in batch], dtype=np.float32)
-        act_np  = np.array([t.action      for t in batch], dtype=np.float32)
-        rew_np  = np.array([t.reward      for t in batch], dtype=np.float32)
-        done_np = np.array([t.done        for t in batch], dtype=np.float32)
-        lp_np   = np.array([t.log_prob    for t in batch], dtype=np.float32)
+        obs_np = np.array([t.observation for t in batch], dtype=np.float32)
+        act_np = np.array([t.action for t in batch], dtype=np.float32)
+        rew_np = np.array([t.reward for t in batch], dtype=np.float32)
+        done_np = np.array([t.done for t in batch], dtype=np.float32)
+        lp_np = np.array([t.log_prob for t in batch], dtype=np.float32)
 
-        obs_t = torch.from_numpy(obs_np).to(self.device)   # (B, 4)
+        obs_t = torch.from_numpy(obs_np).to(self.device)  # (B, 4)
 
         with torch.no_grad():
-            logits = self.actor(obs_t)                      # (B, 2)
+            logits = self.actor(obs_t)  # (B, 2)
 
         self._n_reads += 1
         return {
-            "obs":      obs_t,
-            "actions":  act_np,
-            "rewards":  rew_np,
-            "dones":    done_np,
+            "obs": obs_t,
+            "actions": act_np,
+            "rewards": rew_np,
+            "dones": done_np,
             "log_probs": lp_np,
-            "logits":   logits,
-            "n":        len(batch),
+            "logits": logits,
+            "n": len(batch),
         }
 
     def __repr__(self) -> str:
-        return (f"ModelReader(reads={self._n_reads}, "
-                f"batch={self.batch_size}, device={self.device})")
+        return (
+            f"ModelReader(reads={self._n_reads}, "
+            f"batch={self.batch_size}, device={self.device})"
+        )
