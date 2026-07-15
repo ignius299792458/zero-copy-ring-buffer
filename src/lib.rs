@@ -125,7 +125,7 @@ impl PyRingBuffer {
     }
     #[getter]
     fn capacity(&self) -> usize {
-        self.buf.capacity()
+        self.buf.get_capacity()
     }
     #[getter]
     fn is_empty(&self) -> bool {
@@ -140,7 +140,7 @@ impl PyRingBuffer {
         format!(
             "RingBuffer(len={}, capacity={}, full={})",
             self.buf.len(),
-            self.buf.capacity(),
+            self.buf.get_capacity(),
             self.buf.is_full()
         )
     }
