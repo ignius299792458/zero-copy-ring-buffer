@@ -1,17 +1,17 @@
 import numpy as np
 import gymnasium as gym
-from zero_copy_buffer import Transition, SimpleBuffer
+from zero_copy_buffer import StateTransition, RingBuffer
 
 
 class SimEnv:
     """
     One CartPole simulation worker.
-    Runs episodes and writes PpoTransitions into the shared SimpleBuffer.
-    Policy is random for phase 1 — the real actor will replace the
+    Runs episodes and writes PpoTransitions into the shared RingBuffer.
+    Policy is random for phase 2 — the real actor will replace the
     action-selection line without changing anything else.
     """
 
-    def __init__(self, buffer: SimpleBuffer, seed: int = 0):
+    def __init__(self, buffer: RingBuffer, seed: int = 0):
         self.env    = gym.make("CartPole-v1")
         self.buffer = buffer
         self.seed   = seed
@@ -28,6 +28,7 @@ class SimEnv:
         """
         written = 0
         obs = self._obs
+        obs_dim = len(self._obs)
 
         while written < n_steps:
             # phase 1: random policy
@@ -39,10 +40,11 @@ class SimEnv:
             done = terminated or truncated
 
             self.buffer.write(
-                Transition(
+                StateTransition(
                     observation = tuple(obs.astype(np.float32)),
+                    obs_dim = obs_dim,
                     action      = float(action),
-                    log_prob    = log_prob,
+                    log_prob    = float(log_prob),
                     reward      = float(reward),
                     done        = float(done),
                 )

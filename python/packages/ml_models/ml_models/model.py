@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from zero_copy_buffer import SimpleBuffer
+from zero_copy_buffer import RingBuffer
 
 
 class TinyActor(nn.Module):
@@ -27,13 +27,13 @@ class TinyActor(nn.Module):
 class ModelReader:
     """
     Reads a batch of transitions from the Rust buffer and runs one
-    actor forward pass. Phase 1 proves the data path works end-to-end.
+    actor forward pass. Phase 2 proves the data path works end-to-end.
     Phase 2 plugs the real PPO loss in here without changing the read path.
     """
 
     def __init__(
         self,
-        buffer:     SimpleBuffer,
+        buffer:     RingBuffer,
         batch_size: int = 64,
         device:     str = "cpu",
     ):
@@ -51,7 +51,7 @@ class ModelReader:
         if self.buffer.len < self.batch_size:
             return None
 
-        batch = self.buffer.read_batch(self.batch_size)
+        batch = self.buffer.pop_batch(self.batch_size)
 
         # unpack Rust structs -> numpy -> tensor (one allocation)
         obs_np  = np.array([t.observation for t in batch], dtype=np.float32)
