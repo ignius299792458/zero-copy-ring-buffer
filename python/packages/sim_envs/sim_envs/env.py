@@ -1,5 +1,7 @@
 import numpy as np
 import gymnasium as gym
+from typing import Optional
+
 from zero_copy_buffer import StateTransition, RingBuffer
 
 
@@ -11,10 +13,15 @@ class SimEnv:
     action-selection line without changing anything else.
     """
 
-    def __init__(self, buffer: RingBuffer, seed: int = 0):
-        self.env    = gym.make("CartPole-v1")
+    def __init__(
+        self,
+        buffer: RingBuffer,
+        seed: int = 0,
+        render_mode: Optional[str] = None,
+    ):
+        self.env = gym.make(id="CartPole-v1", render_mode=render_mode)
         self.buffer = buffer
-        self.seed   = seed
+        self.seed = seed
         self._total_written = 0
 
         # reset once so self.obs is always valid before collect() is called
@@ -33,25 +40,24 @@ class SimEnv:
         while written < n_steps:
             # phase 1: random policy
             # phase 2: replace with actor.act(obs)
-            action   = self.env.action_space.sample()
-            log_prob = float(np.log(0.5))          # ln(uniform over 2 actions)
+            action = self.env.action_space.sample()
+            log_prob = float(np.log(0.5))  # ln(uniform over 2 actions)
 
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
 
-            self.buffer.write(
+            self.buffer.push(
                 StateTransition(
-                    observation = tuple(obs.astype(np.float32)),
-                    obs_dim = obs_dim,
-                    action      = float(action),
-                    log_prob    = float(log_prob),
-                    reward      = float(reward),
-                    done        = float(done),
+                    observation=tuple(obs.astype(np.float32)),
+                    action=float(action),
+                    log_prob=float(log_prob),
+                    reward=float(reward),
+                    done=float(done),
                 )
             )
 
-            written              += 1
-            self._total_written  += 1
+            written += 1
+            self._total_written += 1
             obs = next_obs if not done else self._reset()
 
         self._obs = obs
@@ -65,5 +71,7 @@ class SimEnv:
         self.env.close()
 
     def __repr__(self) -> str:
-        return (f"SimEnv(written={self._total_written}, "
-                f"buf_len={self.buffer.len}/{self.buffer.capacity})")
+        return (
+            f"SimEnv(written={self._total_written}, "
+            f"buf_len={self.buffer.len}/{self.buffer.capacity})"
+        )

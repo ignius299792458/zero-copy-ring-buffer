@@ -9,7 +9,7 @@ use types::{StateTransition, MAX_OBS_DIM};
 /// Python-visible wrapper for one StateTransition.
 /// observation is a variable-length list (len <= MAX_OBS_DIM); the tail
 /// is padded with zeros internally, obs_dim records the real length.
-#[pyclass(name = "Transition")]
+#[pyclass(name = "StateTransition")]
 #[derive(Clone)]
 struct PyTransition {
     inner: StateTransition,
