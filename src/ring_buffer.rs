@@ -1,64 +1,49 @@
-// Phase 1: simple Vec-backed array buffer.
-//
-// Fixed capacity. write_at wraps to 0 when full — oldest data silently
-// overwritten. No atomics, no mmap, no multiprocessing yet.
-// Phase 2 will replace the Vec with mmap(MAP_SHARED) and write_at with
-// AtomicUsize::fetch_add, touching nothing else.
+use crate::types::StateTransition;
 
-use crate::types::PpoTransition;
-
-pub struct SimpleBuffer {
-    slots: Vec<PpoTransition>,
+pub struct RingBuffer {
+    slots: Vec<StateTransition>,
     capacity: usize,
-    write_at: usize, // next slot to write; wraps at capacity
-    count: usize,    // live items; saturates at capacity
+    head: usize,
+    tail: usize,
+    count: usize,
 }
 
-impl SimpleBuffer {
+impl RingBuffer {
     pub fn new(capacity: usize) -> Self {
         Self {
-            slots: vec![PpoTransition::zero(); capacity],
+            slots: vec![StateTransition::zero(); capacity],
             capacity,
-            write_at: 0,
+            head: 0,
+            tail: 0,
             count: 0,
         }
     }
 
-    /// Push one transition. Overwrites oldest when full.
-    pub fn write(&mut self, t: PpoTransition) {
-        println!(
-            "write: slot={} count={}/{} overwrite={}",
-            self.write_at,
-            self.count,
-            self.capacity,
-            self.count == self.capacity
-        );
-        self.slots[self.write_at] = t;
-        self.write_at = (self.write_at + 1) % self.capacity;
-        if self.count < self.capacity {
-            self.count += 1;
+    pub fn push(&mut self, item: StateTransition) -> Result<(), &'static str> {
+        if self.is_full() {
+            return Err("buffer full");
         }
+        self.slots[self.head] = item;
+        self.head = (self.head + 1) % self.capacity;
+        self.count += 1;
+        Ok(())
     }
 
-    /// Read up to n transitions, starting from the oldest live slot.
-    pub fn read_batch(&self, n: usize) -> Vec<PpoTransition> {
-        let take = n.min(self.count);
-        // when full, write_at points at the oldest slot
-        let start = if self.count == self.capacity {
-            self.write_at
-        } else {
-            0
-        };
-        (0..take)
-            .map(|i| self.slots[(start + i) % self.capacity])
-            .collect()
+    pub fn pop(&mut self) -> Option<StateTransition> {
+        if self.is_empty() {
+            return None;
+        }
+        let item = self.slots[self.tail];
+        self.tail = (self.tail + 1) % self.capacity;
+        self.count -= 1;
+        Some(item)
     }
 
     pub fn len(&self) -> usize {
         self.count
     }
-    pub fn capacity(&self) -> usize {
-        self.capacity
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
     }
     pub fn is_full(&self) -> bool {
         self.count == self.capacity

@@ -1,35 +1,59 @@
 mod ring_buffer;
 mod types;
 
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use ring_buffer::SimpleBuffer;
-use types::PpoTransition;
+use ring_buffer::RingBuffer;
+use types::{StateTransition, MAX_OBS_DIM};
 
-/// Python-visible wrapper for one PpoTransition.
+/// Python-visible wrapper for one StateTransition.
+/// observation is a variable-length list (len <= MAX_OBS_DIM); the tail
+/// is padded with zeros internally, obs_dim records the real length.
 #[pyclass(name = "Transition")]
 #[derive(Clone)]
 struct PyTransition {
-    inner: PpoTransition,
+    inner: StateTransition,
 }
 
 #[pymethods]
 impl PyTransition {
     #[new]
-    fn new(observation: [f32; 4], action: f32, log_prob: f32, reward: f32, done: f32) -> Self {
-        Self {
-            inner: PpoTransition {
-                observation,
+    fn new(
+        observation: Vec<f32>,
+        action: f32,
+        log_prob: f32,
+        reward: f32,
+        done: f32,
+    ) -> PyResult<Self> {
+        let d = observation.len();
+        if d > MAX_OBS_DIM {
+            return Err(PyValueError::new_err(format!(
+                "observation length {d} exceeds MAX_OBS_DIM {MAX_OBS_DIM}"
+            )));
+        }
+        let mut obs = [0.0f32; MAX_OBS_DIM];
+        obs[..d].copy_from_slice(&observation);
+
+        Ok(Self {
+            inner: StateTransition {
+                observation: obs,
+                obs_dim: d as u32,
                 action,
                 log_prob,
                 reward,
                 done,
             },
-        }
+        })
     }
 
+    /// Returns only the used portion of the observation.
     #[getter]
-    fn observation(&self) -> [f32; 4] {
-        self.inner.observation
+    fn observation(&self) -> Vec<f32> {
+        self.inner.observation[..self.inner.obs_dim as usize].to_vec()
+    }
+    #[getter]
+    fn obs_dim(&self) -> u32 {
+        self.inner.obs_dim
     }
     #[getter]
     fn action(&self) -> f32 {
@@ -50,8 +74,9 @@ impl PyTransition {
 
     fn __repr__(&self) -> String {
         format!(
-            "Transition(obs={:?}, a={}, lp={:.3}, r={}, done={})",
-            self.inner.observation,
+            "Transition(obs_dim={}, obs={:?}, a={}, lp={:.3}, r={}, done={})",
+            self.inner.obs_dim,
+            &self.inner.observation[..self.inner.obs_dim as usize],
             self.inner.action,
             self.inner.log_prob,
             self.inner.reward,
@@ -60,31 +85,36 @@ impl PyTransition {
     }
 }
 
-/// Python-visible wrapper for the SimpleBuffer.
-#[pyclass(name = "SimpleBuffer")]
-struct PySimpleBuffer {
-    buf: SimpleBuffer,
+/// Python-visible wrapper for the RingBuffer.
+/// push rejects writes when full (returns False); pop returns None when empty.
+#[pyclass(name = "RingBuffer")]
+struct PyRingBuffer {
+    buf: RingBuffer,
 }
 
 #[pymethods]
-impl PySimpleBuffer {
+impl PyRingBuffer {
     #[new]
     fn new(capacity: usize) -> Self {
         Self {
-            buf: SimpleBuffer::new(capacity),
+            buf: RingBuffer::new(capacity),
         }
     }
 
-    /// Push one transition; overwrites oldest when full.
-    fn write(&mut self, t: &PyTransition) {
-        self.buf.write(t.inner);
+    /// Push one transition. Returns False if the buffer is full (write rejected).
+    fn push(&mut self, t: &PyTransition) -> bool {
+        self.buf.push(t.inner).is_ok()
     }
 
-    /// Pull up to n transitions as a list of Transition objects.
-    fn read_batch(&self, n: usize) -> Vec<PyTransition> {
-        self.buf
-            .read_batch(n)
-            .into_iter()
+    /// Pop the oldest transition, or None if the buffer is empty.
+    fn pop(&mut self) -> Option<PyTransition> {
+        self.buf.pop().map(|inner| PyTransition { inner })
+    }
+
+    /// Pop up to n transitions at once.
+    fn pop_batch(&mut self, n: usize) -> Vec<PyTransition> {
+        (0..n)
+            .filter_map(|_| self.buf.pop())
             .map(|inner| PyTransition { inner })
             .collect()
     }
@@ -98,13 +128,17 @@ impl PySimpleBuffer {
         self.buf.capacity()
     }
     #[getter]
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty()
+    }
+    #[getter]
     fn is_full(&self) -> bool {
         self.buf.is_full()
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "SimpleBuffer(len={}, capacity={}, full={})",
+            "RingBuffer(len={}, capacity={}, full={})",
             self.buf.len(),
             self.buf.capacity(),
             self.buf.is_full()
@@ -112,10 +146,10 @@ impl PySimpleBuffer {
     }
 }
 
-// MUST be named `_core` — matches module-name in pyproject.toml
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTransition>()?;
-    m.add_class::<PySimpleBuffer>()?;
+    m.add_class::<PyRingBuffer>()?;
+    m.add("MAX_OBS_DIM", MAX_OBS_DIM)?;
     Ok(())
 }
