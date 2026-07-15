@@ -1,13 +1,14 @@
 """
 Phase 1 pipeline — single process, no concurrency.
+Phase 2 pipeline — multiple process, concurrency all controlled by exclusive mut borrowing (rust)
 
-    SimEnv (sim_envs)  -->  SimpleBuffer (Rust/_core)  -->  ModelReader (ml_models)
+    SimEnvs (sim_envs)  -->  RingBuffer (Rust/_core)  -->  ModelReader (ml_models)
 
 Poetry path dependencies handle all imports — no sys.path hacks needed.
 Run from the project root after: maturin develop
 """
 
-from zero_copy_buffer import SimpleBuffer
+from zero_copy_buffer import RingBuffer
 from sim_envs import SimEnv
 from ml_models import ModelReader
 
@@ -22,7 +23,7 @@ SEED            = 42
 
 def main() -> None:
     print("=" * 60)
-    print("zero_copy_buffer  |  phase 1  |  single-process pipeline")
+    print("zero_copy_buffer  |  phase 2  |  multiple-process pipeline")
     print("=" * 60)
     print(f"  buffer capacity : {BUFFER_CAPACITY}")
     print(f"  collect steps   : {COLLECT_STEPS}")
@@ -30,7 +31,7 @@ def main() -> None:
     print(f"  iterations      : {N_ITERATIONS}")
     print()
 
-    buf    = SimpleBuffer(BUFFER_CAPACITY)
+    buf    = RingBuffer(BUFFER_CAPACITY)
     sim    = SimEnv(buffer=buf, seed=SEED)
     reader = ModelReader(buffer=buf, batch_size=BATCH_SIZE)
 
@@ -64,7 +65,7 @@ def main() -> None:
 
     sim.close()
     print()
-    print("phase 1 complete — sim_envs → rust buffer → ml_models flowing.")
+    print("phase 2 complete — sim_envs → rust buffer → ml_models flowing.")
     print(f"  {sim}")
     print(f"  {reader}")
 
